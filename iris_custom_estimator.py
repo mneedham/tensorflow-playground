@@ -1,5 +1,9 @@
 import pandas as pd
 import tensorflow as tf
+from tensorflow.python.estimator.canned.linear import _compute_fraction_of_zero
+from tensorflow.python.feature_column import feature_column_lib
+from tensorflow.python.training import training_util
+from tensorflow.python.training.ftrl import FtrlOptimizer
 
 
 def train_input_fn(features, labels, batch_size):
@@ -7,11 +11,14 @@ def train_input_fn(features, labels, batch_size):
     return dataset.shuffle(1000).repeat().batch(batch_size)
 
 
+none = None
+
+
 def eval_input_fn(features, labels, batch_size):
     features = dict(features)
     inputs = (features, labels)
     dataset = tf.data.Dataset.from_tensor_slices(inputs)
-    assert batch_size is not None, "batch_size must not be None"
+    assert batch_size is not none, "batch_size must not be None"
     return dataset.batch(batch_size)
 
 
@@ -31,10 +38,42 @@ test_y = test_data.ix[:, 'f5']
 feature_columns = [tf.feature_column.numeric_column(key=key) for key in train_x.keys()]
 
 # Define classifier
-head = tf.contrib.estimator.regression_head()
-head.create_estimator_spec()
+LEARNING_RATE = 0.3
 
-classifier = tf.estimator.LinearClassifier(feature_columns=feature_columns, n_classes=3)
+weight_column = None
+label_vocabulary = None
+loss_reduction = tf.losses.Reduction.SUM
+
+head = tf.contrib.estimator.multi_class_head(3, weight_column=weight_column,
+                                             label_vocabulary=label_vocabulary,
+                                             loss_reduction=loss_reduction)
+
+
+def train_op_fn(loss):
+    opt = FtrlOptimizer(learning_rate=LEARNING_RATE)
+    return opt.minimize(loss, global_step=training_util.get_global_step())
+
+
+def model_fn(features, labels, mode, config):
+    def logit_fn(features):
+        cols_to_vars = {}
+        return feature_column_lib.linear_model(
+            features=features,
+            feature_columns=feature_columns,
+            units=head.logits_dimension,
+            cols_to_vars=cols_to_vars)
+
+    logits = logit_fn(features=features)
+
+    return head.create_estimator_spec(
+        features=features,
+        mode=mode,
+        logits=logits,
+        labels=labels,
+        train_op_fn=train_op_fn)
+
+
+classifier = tf.estimator.Estimator(model_fn=model_fn)
 
 classifier.train(
     input_fn=lambda: train_input_fn(train_x, train_y, 100),
@@ -43,4 +82,5 @@ classifier.train(
 eval_result = classifier.evaluate(
     input_fn=lambda: eval_input_fn(test_x, test_y, 100))
 
+print(eval_result)
 print('\nTest set accuracy: {accuracy:0.3f}\n'.format(**eval_result))
