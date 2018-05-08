@@ -5,8 +5,14 @@ from tensorflow.python.training import training_util
 from tensorflow.python.training.ftrl import FtrlOptimizer
 
 
+# encode_tensors = tf.nn.embedding_lookup(embeddings, labels)
+
+
 def train_input_fn(features, labels, batch_size):
+    embeddings = tf.constant([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    labels = tf.nn.embedding_lookup(embeddings, labels)
     dataset = tf.data.Dataset.from_tensor_slices((dict(features), labels))
+    print(dataset)
     return dataset.shuffle(1000).repeat().batch(batch_size)
 
 
@@ -14,6 +20,8 @@ none = None
 
 
 def eval_input_fn(features, labels, batch_size):
+    embeddings = tf.constant([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    labels = tf.nn.embedding_lookup(embeddings, labels)
     features = dict(features)
     inputs = (features, labels)
     dataset = tf.data.Dataset.from_tensor_slices(inputs)
@@ -24,6 +32,9 @@ def eval_input_fn(features, labels, batch_size):
 # read data from csv
 train_data = pd.read_csv("iris_training.csv", names=['f1', 'f2', 'f3', 'f4', 'f5'])
 test_data = pd.read_csv("iris_test.csv", names=['f1', 'f2', 'f3', 'f4', 'f5'])
+
+# train_data["f5"] = train_data["f5"].map(lambda item: tuple([item]))
+# test_data["f5"] = test_data["f5"].map(lambda item: tuple([item]))
 
 # separate train data
 train_x = train_data[['f1', 'f2', 'f3', 'f4']]
@@ -41,15 +52,16 @@ LEARNING_RATE = 0.3
 
 weight_column = None
 label_vocabulary = None
-loss_reduction = tf.losses.Reduction.SUM
+loss_reduction = tf.losses.Reduction.SUM_OVER_BATCH_SIZE
 
-head = tf.contrib.estimator.multi_class_head(3, weight_column=weight_column,
+head = tf.contrib.estimator.multi_label_head(3, weight_column=weight_column,
                                              label_vocabulary=label_vocabulary,
                                              loss_reduction=loss_reduction)
 
 
 def model_fn(features, labels, mode, config):
     def train_op_fn(loss):
+        print(loss)
         opt = FtrlOptimizer(learning_rate=LEARNING_RATE)
         return opt.minimize(loss, global_step=training_util.get_global_step())
 
