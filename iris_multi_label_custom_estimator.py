@@ -11,6 +11,7 @@ from tensorflow.python.training.ftrl import FtrlOptimizer
 def train_input_fn(features, labels, batch_size):
     embeddings = tf.constant([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
     labels = tf.nn.embedding_lookup(embeddings, labels)
+    print(features, labels)
     dataset = tf.data.Dataset.from_tensor_slices((dict(features), labels))
     print(dataset)
     return dataset.shuffle(1000).repeat().batch(batch_size)
