@@ -41,7 +41,8 @@ def eval_input_fn(features, labels, batch_size):
     return dataset.batch(batch_size)
 
 
-driver = GraphDatabase.driver("bolt://localhost", auth=basic_auth("neo4j", "neo"))
+# driver = GraphDatabase.driver("bolt://localhost", auth=basic_auth("neo4j", "neo"))
+driver = GraphDatabase.driver("bolt://54.197.87.95:32952", auth=basic_auth("neo4j", "pennant-automation-pacific"))
 
 genres_query = """\
 MATCH (genre:Genre)
@@ -90,8 +91,8 @@ train_y = train_data.ix[:, 'genres']
 
 # separate test data
 test_x = test_data.ix[:, "embedding"]
+test_x = pd.DataFrame(np.array([np.array(item) for item in test_x.values]))
 test_x.columns = [str(col) for col in train_x.columns.get_values()]
-# test_x = pd.DataFrame(np.array([np.array(item) for item in test_x.values]))
 
 test_y = test_data.ix[:, 'genres']
 # test_y = tf.constant(np.array([np.array(item) for item in test_y.values]))
@@ -112,8 +113,6 @@ head = tf.contrib.estimator.multi_label_head(20, weight_column=weight_column,
 
 
 def model_fn(features, labels, mode, config):
-    print(features)
-
     def train_op_fn(loss):
         print(loss)
         opt = FtrlOptimizer(learning_rate=LEARNING_RATE)
@@ -143,4 +142,4 @@ eval_result = classifier.evaluate(
     input_fn=lambda: eval_input_fn(test_x, test_y, 100))
 
 print(eval_result)
-print('\nTest set accuracy: {accuracy:0.3f}\n'.format(**eval_result))
+print('\nTest set AUC: {auc:0.3f}\n'.format(**eval_result))
