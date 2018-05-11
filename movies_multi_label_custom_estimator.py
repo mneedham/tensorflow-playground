@@ -30,6 +30,12 @@ def eval_input_fn(features, labels, batch_size):
     return dataset.batch(batch_size)
 
 
+def predict_input_fn(features, batch_size):
+    features = dict(features)
+    dataset = tf.data.Dataset.from_tensor_slices(features)
+    return dataset.batch(batch_size)
+
+
 def model_fn(features, labels, mode, config):
     def train_op_fn(loss):
         print(loss)
@@ -59,43 +65,22 @@ password = "pennant-automation-pacific"
 
 driver = GraphDatabase.driver(host, auth=basic_auth("neo4j", password))
 
-genres_query = """\
+movies_genres_query = """\
 MATCH (genre:Genre)
 WITH genre ORDER BY genre.name
 WITH collect(id(genre)) AS genres
 MATCH (m:Movie)-[:IN_GENRE]->(genre)
-WITH genres, id(m) AS source, collect(id(genre)) AS target
-RETURN source, [g in genres | CASE WHEN g in target THEN 1 ELSE 0 END] AS genres
-"""
-
-movies_query = """\
-MATCH (m:Movie)
-RETURN collect(id(m)) AS movies
+WITH genres, id(m) AS source, m.embedding AS embedding, collect(id(genre)) AS target
+RETURN source, embedding, [g in genres | CASE WHEN g in target THEN 1 ELSE 0 END] AS genres
 """
 
 with driver.session() as session:
-    result = session.run(genres_query)
-    all_genres = pd.DataFrame([dict(row) for row in result])
-    movies = [row["movies"] for row in session.run(movies_query)][0]
+    result = session.run(movies_genres_query)
+    df = pd.DataFrame([dict(row) for row in result])
 
-all_movies = []
-with open("movies.emb", "r") as movies_file:
-    next(movies_file)
-    reader = csv.reader(movies_file, delimiter=" ")
-    for row in reader:
-        movie_id = row[0]
-        if int(movie_id) in movies:
-            all_movies.append({"source": int(movie_id),
-                               "embedding": [float(item)
-                                             for item in row[1:]]})
-
-all_movies = pd.DataFrame(all_movies)
-
-everything = pd.merge(all_movies, all_genres, on='source')
-
-train_index = int(len(everything) * 0.9)
-train_data = everything[:train_index]
-test_data = everything[train_index:]
+train_index = int(len(df) * 0.9)
+train_data = df[:train_index]
+test_data = df[train_index:]
 
 train_x = train_data.ix[:, "embedding"]
 train_x = pd.DataFrame(np.array([np.array(item) for item in train_x.values]))
@@ -138,3 +123,40 @@ temp = classifier.predict(input_fn=lambda: eval_input_fn(train_x, train_y, 100))
 for i in range(10):
     print((next(temp)['logits']))
     print((next(temp)['probabilities']))
+
+expected = ['Setosa', 'Versicolor', 'Virginica']
+predict_x = {
+    'SepalLength': [5.1, 5.9, 6.9],
+    'SepalWidth': [3.3, 3.0, 3.1],
+    'PetalLength': [1.7, 4.2, 5.4],
+    'PetalWidth': [0.5, 1.5, 2.1],
+}
+
+movies_genres_predict_query = """\
+MATCH (genre:Genre)
+WITH genre ORDER BY genre.name
+WITH collect(id(genre)) AS genres
+MATCH (m:Movie)-[:IN_GENRE]->(genre)
+WITH genres, id(m) AS source, m.embedding AS embedding, collect(id(genre)) AS target
+RETURN source, embedding, [g in genres | CASE WHEN g in target THEN 1 ELSE 0 END] AS genres
+ORDER BY rand() 
+LIMIT 10
+"""
+
+with driver.session() as session:
+    result = session.run(movies_genres_predict_query)
+    predict_df = pd.DataFrame([dict(row) for row in result])
+
+expected = predict_df["genres"]
+
+predict_x = predict_df.ix[:, "embedding"]
+predict_x = pd.DataFrame(np.array([np.array(item) for item in predict_x.values]))
+predict_x.columns = [str(col) for col in predict_x.columns.get_values()]
+
+predictions = classifier.predict(
+    input_fn=lambda: predict_input_fn(predict_x, 100))
+
+for pred_dict, expec in zip(predictions, expected):
+    for idx, label in enumerate(expec):
+        print(label, pred_dict["probabilities"][idx])
+    print("--")
