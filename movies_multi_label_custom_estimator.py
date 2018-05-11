@@ -1,12 +1,10 @@
-import pandas as pd
 import numpy as np
-import csv
+import pandas as pd
 import tensorflow as tf
+from neo4j.v1 import GraphDatabase, basic_auth
 from tensorflow.python.feature_column import feature_column_lib
 from tensorflow.python.training import training_util
 from tensorflow.python.training.ftrl import FtrlOptimizer
-
-from neo4j.v1 import GraphDatabase, basic_auth
 
 none = None
 
@@ -119,22 +117,32 @@ eval_result = classifier.evaluate(
 print(eval_result)
 print('\nTest set AUC: {auc:0.3f}\n'.format(**eval_result))
 
+genres_query = """\
+MATCH (genre:Genre)
+WITH genre ORDER BY genre.name
+RETURN collect(genre.name) AS genres
+"""
+
+with driver.session() as session:
+    result = session.run(genres_query)
+    genres = result.peek()["genres"]
+
 movies_genres_predict_query = """\
 MATCH (genre:Genre)
 WITH genre ORDER BY genre.name
 WITH collect(id(genre)) AS genres
 MATCH (m:Movie)-[:IN_GENRE]->(genre)
-WITH genres, id(m) AS source, m.embedding AS embedding, collect(id(genre)) AS target
-RETURN source, embedding, [g in genres | CASE WHEN g in target THEN 1 ELSE 0 END] AS genres
+WITH genres, m.title AS movie, id(m) AS source, m.embedding AS embedding, collect(id(genre)) AS target
+RETURN source, movie, embedding, [g in genres | CASE WHEN g in target THEN 1 ELSE 0 END] AS genres
 ORDER BY rand() 
-LIMIT 10
+LIMIT 3
 """
 
 with driver.session() as session:
     result = session.run(movies_genres_predict_query)
     predict_df = pd.DataFrame([dict(row) for row in result])
 
-expected = predict_df["genres"]
+expected_df = predict_df[["genres", "source", "movie"]]
 
 predict_x = predict_df.ix[:, "embedding"]
 predict_x = pd.DataFrame(np.array([np.array(item) for item in predict_x.values]))
@@ -143,7 +151,9 @@ predict_x.columns = [str(col) for col in predict_x.columns.get_values()]
 predictions = classifier.predict(
     input_fn=lambda: predict_input_fn(predict_x, 100))
 
-for pred_dict, expec in zip(predictions, expected):
-    for idx, label in enumerate(expec):
-        print(label, pred_dict["probabilities"][idx])
+for pred_dict, expec in zip(predictions, expected_df.as_matrix()):
+    expected, source, movie = expec
+    print("Movie: {0}".format(movie))
+    for idx, label in enumerate(expected):
+        print(label, genres[idx], pred_dict["probabilities"][idx])
     print("--")
