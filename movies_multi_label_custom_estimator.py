@@ -8,21 +8,13 @@ from tensorflow.python.training.ftrl import FtrlOptimizer
 
 from neo4j.v1 import GraphDatabase, basic_auth
 
+none = None
+
 
 def train_input_fn(features, labels, batch_size):
-    # dataset = tf.data.Dataset.from_tensor_slices((
-    #     np.array([np.array(value) for value in features.values]),
-    #     np.array([np.array(item) for item in labels])
-    # ))
-    # print(features, labels)
     labels = tf.constant(np.array([np.array(item) for item in labels.values]))
-
-    # print(features, labels)
     dataset = tf.data.Dataset.from_tensor_slices((dict(features), labels))
     return dataset.shuffle(1000).repeat().batch(batch_size)
-
-
-none = None
 
 
 def eval_input_fn(features, labels, batch_size):
@@ -32,17 +24,17 @@ def eval_input_fn(features, labels, batch_size):
     inputs = (features, labels)
     dataset = tf.data.Dataset.from_tensor_slices(inputs)
 
-    # dataset = tf.data.Dataset.from_tensor_slices((
-    #     np.array([np.array(value) for value in features.values]),
-    #     np.array([np.array(item) for item in labels])
-    # ))
-
     assert batch_size is not none, "batch_size must not be None"
     return dataset.batch(batch_size)
 
 
-# driver = GraphDatabase.driver("bolt://localhost", auth=basic_auth("neo4j", "neo"))
-driver = GraphDatabase.driver("bolt://54.197.87.95:32952", auth=basic_auth("neo4j", "pennant-automation-pacific"))
+# host = "bolt://localhost"
+# password = "neo"
+
+host = "bolt://54.197.87.95:32952"
+password = "pennant-automation-pacific"
+
+driver = GraphDatabase.driver(host, auth=basic_auth("neo4j", password))
 
 genres_query = """\
 MATCH (genre:Genre)
@@ -75,7 +67,6 @@ with open("movies.emb", "r") as movies_file:
 all_movies = pd.DataFrame(all_movies)
 
 everything = pd.merge(all_movies, all_genres, on='source')
-# everything["genres"] = everything["genres"].map(tf.constant)
 
 train_index = int(len(everything) * 0.9)
 train_data = everything[:train_index]
@@ -86,8 +77,6 @@ train_x = pd.DataFrame(np.array([np.array(item) for item in train_x.values]))
 train_x.columns = [str(col) for col in train_x.columns.get_values()]
 
 train_y = train_data.ix[:, 'genres']
-# train_y = np.array([np.array(item) for item in train_y.values])
-# train_y = tf.constant(np.array([np.array(item) for item in train_y.values]))
 
 # separate test data
 test_x = test_data.ix[:, "embedding"]
@@ -95,7 +84,6 @@ test_x = pd.DataFrame(np.array([np.array(item) for item in test_x.values]))
 test_x.columns = [str(col) for col in train_x.columns.get_values()]
 
 test_y = test_data.ix[:, 'genres']
-# test_y = tf.constant(np.array([np.array(item) for item in test_y.values]))
 
 # Define feature columns
 feature_columns = [tf.feature_column.numeric_column(key=key) for key in train_x.keys()]
