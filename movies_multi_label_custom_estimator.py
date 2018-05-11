@@ -119,19 +119,6 @@ eval_result = classifier.evaluate(
 print(eval_result)
 print('\nTest set AUC: {auc:0.3f}\n'.format(**eval_result))
 
-temp = classifier.predict(input_fn=lambda: eval_input_fn(train_x, train_y, 100))
-for i in range(10):
-    print((next(temp)['logits']))
-    print((next(temp)['probabilities']))
-
-expected = ['Setosa', 'Versicolor', 'Virginica']
-predict_x = {
-    'SepalLength': [5.1, 5.9, 6.9],
-    'SepalWidth': [3.3, 3.0, 3.1],
-    'PetalLength': [1.7, 4.2, 5.4],
-    'PetalWidth': [0.5, 1.5, 2.1],
-}
-
 movies_genres_predict_query = """\
 MATCH (genre:Genre)
 WITH genre ORDER BY genre.name
